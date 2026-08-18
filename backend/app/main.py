@@ -25,9 +25,30 @@ from app.routers import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Create all tables on startup (dev convenience — use Alembic in production)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    # Auto-create all tables on startup
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+        # Auto-initialize standard system roles
+        from sqlalchemy import select
+        from app.models.role import Role
+        from app.core.database import AsyncSessionLocal
+
+        async with AsyncSessionLocal() as db:
+            for r_name, r_desc in [
+                ("administrator", "Full system and business access"),
+                ("manager", "Operational and staff management access"),
+                ("cashier", "Point of Sale (POS) and product view access"),
+                ("inventory_clerk", "Stock and inventory management access"),
+                ("accountant", "Financial reports, expenses, and invoices access"),
+            ]:
+                exist = await db.execute(select(Role).where(Role.name == r_name))
+                if not exist.scalar_one_or_none():
+                    db.add(Role(name=r_name, description=r_desc))
+            await db.commit()
+    except Exception as e:
+        print(f"Warning during lifespan initialization: {e}")
     yield
 
 
