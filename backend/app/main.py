@@ -81,6 +81,7 @@ app.include_router(admin.router)
 app.include_router(shifts.router)
 
 
+@app.get("/api")
 @app.get("/api/health")
 async def health():
     return {"status": "ok", "app": settings.APP_NAME}
