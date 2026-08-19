@@ -86,29 +86,31 @@ async def health():
     return {"status": "ok", "app": settings.APP_NAME}
 
 
-# Mount built Frontend assets (SPA support)
+# Mount built Frontend assets for local running (when not running in Vercel serverless mode)
 import os
 from pathlib import Path
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-frontend_dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+if not os.environ.get("VERCEL") and not os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+    frontend_dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+    if frontend_dist.exists():
+        assets_dir = frontend_dist / "assets"
+        if assets_dir.exists():
+            app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
 
-if frontend_dist.exists():
-    # Mount assets directory
-    assets_dir = frontend_dist / "assets"
-    if assets_dir.exists():
-        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
+        @app.get("/{full_path:path}")
+        async def serve_spa(full_path: str):
+            if full_path.startswith("api"):
+                from fastapi import HTTPException
+                raise HTTPException(status_code=404, detail="API endpoint not found")
+            file_path = frontend_dist / full_path
+            if file_path.is_file():
+                return FileResponse(file_path)
+            return FileResponse(frontend_dist / "index.html")
+    else:
+        @app.get("/")
+        async def root():
+            from fastapi.responses import RedirectResponse
+            return RedirectResponse(url="/docs")
 
-    # Catch-all route to serve index.html for React Router SPA
-    @app.get("/{full_path:path}")
-    async def serve_spa(full_path: str):
-        file_path = frontend_dist / full_path
-        if file_path.is_file():
-            return FileResponse(file_path)
-        return FileResponse(frontend_dist / "index.html")
-else:
-    @app.get("/")
-    async def root():
-        from fastapi.responses import RedirectResponse
-        return RedirectResponse(url="/docs")
